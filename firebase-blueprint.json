@@ -117,6 +117,21 @@
         "imageUrl": { "type": "string" }
       },
       "required": ["id", "nome", "imageUrl"]
+    },
+    "CampaignNote": {
+      "title": "CampaignNote",
+      "description": "Notes for GM prep, characters logs, and player session summaries.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "titulo": { "type": "string" },
+        "conteudo": { "type": "string" },
+        "autor_uid": { "type": "string" },
+        "autor_email": { "type": "string" },
+        "tipo": { "type": "string", "enum": ["PUBLIC", "PRIVATE", "GM_ONLY"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["titulo", "conteudo", "autor_uid", "autor_email", "tipo"]
     }
   },
   "firestore": {
@@ -143,6 +158,10 @@
     "/statuses/{statusId}": {
       "schema": "StatusType",
       "description": "Custom statuses mapped to icons managed by the GM directly."
+    },
+    "/campaign_notes/{noteId}": {
+      "schema": "CampaignNote",
+      "description": "Durable structured campaign notes for GM prep, public log, or private notes."
     }
   }
 }

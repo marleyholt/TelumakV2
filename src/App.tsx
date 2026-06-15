@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth, googleProvider, signInWithPopup, signOut } from './firebase';
+import { 
+  db, 
+  auth, 
+  googleProvider, 
+  signInWithPopup, 
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile 
+} from './firebase';
 import { 
   collection, doc, setDoc, getDoc, onSnapshot, addDoc, serverTimestamp, query, orderBy, limit, deleteDoc, updateDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { 
-  Plus, Trash2, LogOut, Heart, Shield, Swords, User as UserIcon, Send, EyeOff, LayoutGrid, Scroll, Flame, PhoneCall, RefreshCw, Sparkles, BookOpen, UserPlus, Star, Sliders
+  Plus, Trash2, LogOut, Heart, Shield, Swords, User as UserIcon, Send, EyeOff, Eye, LayoutGrid, Scroll, Flame, PhoneCall, RefreshCw, Sparkles, BookOpen, UserPlus, Star, Sliders, Lock, HelpCircle
 } from 'lucide-react';
 
 import { Character, CustomStatusType, ChatMessage, CharVersion, UserProfile } from './types';
@@ -15,6 +24,7 @@ import { DiceTray } from './components/DiceTray';
 import { StatusManager } from './components/StatusManager';
 import { CharacterSheet } from './components/CharacterSheet';
 import { BattleMap } from './components/BattleMap';
+import { CampaignNotes } from './components/CampaignNotes';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -28,8 +38,16 @@ export default function App() {
   const [versionsMap, setVersionsMap] = useState<{ [charId: string]: CharVersion[] }>({});
 
   // Navigation State
-  const [currentTab, setCurrentTab] = useState<'personagens' | 'arena' | 'audio_chat'>('personagens');
+  const [currentTab, setCurrentTab] = useState<'personagens' | 'arena' | 'audio_chat' | 'anotacoes'>('personagens');
   const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
+
+  // Email/Password Authentication state variables
+  const [authTab, setAuthTab] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authDisplayName, setAuthDisplayName] = useState('');
+  const [gmSecretKey, setGmSecretKey] = useState('');
+  const [authError, setAuthError] = useState('');
 
   // Chat panel states
   const [chatMessageText, setChatMessageText] = useState('');
@@ -59,6 +77,7 @@ export default function App() {
   const [editToolDes, setEditToolDes] = useState(0);
   const [editToolCog, setEditToolCog] = useState(0);
   const [editToolCar, setEditToolCar] = useState(0);
+  const [editEmailDono, setEditEmailDono] = useState('');
 
   // Auth monitoring listener
   useEffect(() => {
@@ -79,7 +98,7 @@ export default function App() {
               email: user.email || '',
               displayName: user.displayName || 'Gamer',
               photoURL: user.photoURL || undefined,
-              role: (user.email === 'leaog.8@gmail.com' || user.email === 'leaog.8@gmail.com') ? 'GM' : 'PLAYER'
+              role: (user.email === 'leaog.8@gmail.com') ? 'GM' : 'PLAYER'
             };
             await setDoc(userRef, profile);
           } else {
@@ -98,6 +117,63 @@ export default function App() {
 
     return unsub;
   }, []);
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthError('Preencha seu e-mail e sua senha de conjuração.');
+      return;
+    }
+    try {
+      await signInWithEmailAndPassword(auth, authEmail.trim(), authPassword);
+    } catch (err: any) {
+      setAuthError(translateAuthError(err?.code || err?.message || 'Erro desconhecido'));
+    }
+  };
+
+  const handleEmailRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!authEmail.trim() || !authPassword.trim() || !authDisplayName.trim()) {
+      setAuthError('Todos os campos obrigatórios precisam estar preenchidos!');
+      return;
+    }
+    try {
+      const userCred = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPassword);
+      if (userCred.user) {
+        await updateProfile(userCred.user, {
+          displayName: authDisplayName.trim()
+        });
+
+        const isSecretGM = gmSecretKey.trim().toUpperCase() === 'TELUMAK_GM';
+        const userRef = doc(db, 'users', userCred.user.uid);
+        const profile: UserProfile = {
+          uid: userCred.user.uid,
+          email: userCred.user.email || '',
+          displayName: authDisplayName.trim(),
+          photoURL: undefined,
+          role: (isSecretGM || userCred.user.email === 'leaog.8@gmail.com') ? 'GM' : 'PLAYER'
+        };
+        await setDoc(userRef, profile);
+        setUserProfile(profile);
+      }
+    } catch (err: any) {
+      setAuthError(translateAuthError(err?.code || err?.message || 'Erro desconhecido'));
+    }
+  };
+
+  const translateAuthError = (code: string) => {
+    switch (code) {
+      case 'auth/invalid-email': return 'E-mail inválido ou mal formatado.';
+      case 'auth/wrong-password': return 'Senha incorreta.';
+      case 'auth/user-not-found': return 'Nenhum jogador encontrado com este e-mail.';
+      case 'auth/email-already-in-use': return 'Este e-mail já está em uso por outro grimório.';
+      case 'auth/weak-password': return 'A senha deve conter no mínimo 6 caracteres.';
+      case 'auth/invalid-credential': return 'Par de login e senha incorretos.';
+      default: return 'Falha na autenticação: ' + code;
+    }
+  };
 
   // Sync core Firestore arrays in real-time
   useEffect(() => {
@@ -312,6 +388,17 @@ export default function App() {
     }
   };
 
+  const handleToggleHideMessage = async (msgId: string, currentHiddenStatus: boolean) => {
+    const docPath = `messages/${msgId}`;
+    try {
+      await updateDoc(doc(db, 'messages', msgId), {
+        ocultada: !currentHiddenStatus
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, docPath);
+    }
+  };
+
   // Open Quick stat adjuster for GM
   const setupQuickStatsEditor = (char: Character) => {
     setEditingStatsCharId(char.id);
@@ -327,6 +414,7 @@ export default function App() {
     setEditToolDes(char.ferramenta_destreza || 0);
     setEditToolCog(char.ferramenta_cognicao || 0);
     setEditToolCar(char.ferramenta_carisma || 0);
+    setEditEmailDono(char.email_dono || '');
   };
 
   const handleSaveQuickStats = async () => {
@@ -345,7 +433,8 @@ export default function App() {
         ferramenta_fisico: editToolFis,
         ferramenta_destreza: editToolDes,
         ferramenta_cognicao: editToolCog,
-        ferramenta_carisma: editToolCar
+        ferramenta_carisma: editToolCar,
+        email_dono: editEmailDono.trim().toLowerCase()
       });
       setEditingStatsCharId(null);
     } catch (err) {
@@ -377,31 +466,153 @@ export default function App() {
       <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1547891654-e66ed7edd96c?auto=format&fit=crop&w=1920&q=80')] bg-cover bg-center opacity-5 blur-sm"></div>
         
-        <div className="bg-[#0a0a0a] border border-white/10 p-10 rounded-none w-full max-w-md shadow-2xl flex flex-col items-center relative z-10 text-center">
-          <div className="w-16 h-16 rounded-none bg-[#050505] border border-orange-500/40 flex items-center justify-center text-orange-500 shadow-lg mb-6 animate-pulse">
-            <Swords className="h-8 w-8" />
+        <div className="bg-[#0a0a0a] border border-white/10 p-8 rounded-none w-full max-w-md shadow-2xl flex flex-col relative z-10">
+          <div className="self-center w-12 h-12 rounded-none bg-[#050505] border border-orange-500/40 flex items-center justify-center text-orange-500 shadow-lg mb-4 animate-pulse">
+            <Swords className="h-6 w-6" />
           </div>
           
-          <h1 className="text-4xl font-black text-white tracking-tighter uppercase italic leading-none mb-1">TELUMAK <span className="text-orange-500">RPG</span></h1>
-          <p className="text-[10px] text-white/40 font-mono uppercase tracking-widest mb-6">Portal de Aliança & Sessão Profissional</p>
-          <div className="h-px bg-white/10 w-full mb-8"></div>
+          <h1 className="text-center text-3xl font-black text-white tracking-tighter uppercase italic leading-none mb-1">TELUMAK <span className="text-orange-500">RPG</span></h1>
+          <p className="text-center text-[9px] text-white/40 font-mono uppercase tracking-widest mb-4">Portal de Aliança & Sessão Profissional</p>
+          <div className="h-px bg-white/10 w-full mb-5"></div>
 
-          <p className="text-xs text-white/65 leading-relaxed max-w-xs mb-8">
-            Conecte seu grimório em tempo real. Sincronização redundante de grid tático e fichas para jogadores e mestre.
-          </p>
+          {/* Tab buttons */}
+          <div className="flex bg-[#050505] border border-white/5 p-1 mb-5">
+            <button
+              onClick={() => { setAuthTab('LOGIN'); setAuthError(''); }}
+              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider transition ${
+                authTab === 'LOGIN' ? 'bg-orange-500 text-white' : 'text-white/40 hover:text-white'
+              }`}
+            >
+              Entrar
+            </button>
+            <button
+              onClick={() => { setAuthTab('REGISTER'); setAuthError(''); }}
+              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider transition ${
+                authTab === 'REGISTER' ? 'bg-orange-500 text-white' : 'text-white/40 hover:text-white'
+              }`}
+            >
+              Criar Conta
+            </button>
+          </div>
+
+          {authError && (
+            <div className="mb-4 bg-rose-950/20 border border-rose-500/30 text-rose-400 p-2 text-[11px] font-semibold text-center uppercase tracking-wider leading-relaxed">
+              ⚠️ {authError}
+            </div>
+          )}
+
+          {authTab === 'LOGIN' ? (
+            <form onSubmit={handleEmailLogin} className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-[9px] text-white/40 font-black uppercase tracking-widest">E-mail do Jogador</label>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                  placeholder="seu-email@telumak.com"
+                  className="w-full bg-[#050505] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500 rounded-none placeholder-white/10 animate-fade-in"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[9px] text-white/40 font-black uppercase tracking-widest">Senha de Conjuração</label>
+                <input
+                  type="password"
+                  value={authPassword}
+                  onChange={e => setAuthPassword(e.target.value)}
+                  placeholder="******"
+                  className="w-full bg-[#050505] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500 rounded-none placeholder-white/10"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black uppercase text-[10px] tracking-widest py-3 transition-all duration-150 rounded-none"
+              >
+                Confirmar Entrada
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleEmailRegister} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[9px] text-white/40 font-black uppercase tracking-widest">Nome do Herói</label>
+                  <input
+                    type="text"
+                    value={authDisplayName}
+                    onChange={e => setAuthDisplayName(e.target.value)}
+                    placeholder="Guerreiro"
+                    className="w-full bg-[#050505] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500 rounded-none placeholder-white/10"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[9px] text-white/40 font-black uppercase tracking-widest flex items-center gap-1">Chave GM <HelpCircle className="h-2.5 w-2.5 text-orange-400" title="Insira 'TELUMAK_GM' para se registrar como Mestre de jogo instantaneamente." /></label>
+                  <input
+                    type="text"
+                    value={gmSecretKey}
+                    onChange={e => setGmSecretKey(e.target.value)}
+                    placeholder="Opcional"
+                    className="w-full bg-[#050505] border border-white/10 px-3 py-2.5 text-xs text-orange-400 focus:outline-none focus:border-orange-500 rounded-none placeholder-white/10"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[9px] text-white/40 font-black uppercase tracking-widest">E-mail de Inscrição</label>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                  placeholder="seu-email@telumak.com"
+                  className="w-full bg-[#050505] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500 rounded-none placeholder-white/10"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[9px] text-white/40 font-black uppercase tracking-widest">Senha (Min. 6 caracteres)</label>
+                <input
+                  type="password"
+                  value={authPassword}
+                  onChange={e => setAuthPassword(e.target.value)}
+                  placeholder="******"
+                  className="w-full bg-[#050505] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none focus:border-orange-500 rounded-none placeholder-white/10"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black uppercase text-[10px] tracking-widest py-3 transition-all duration-150 rounded-none"
+              >
+                Completar Cadastro
+              </button>
+            </form>
+          )}
+
+          <div className="flex items-center gap-3 my-5">
+            <div className="h-px bg-white/10 flex-1"></div>
+            <span className="text-[8px] text-white/30 font-black uppercase tracking-[0.2em]">Ou</span>
+            <div className="h-px bg-white/10 flex-1"></div>
+          </div>
 
           <button
             onClick={handleLogin}
-            className="w-full bg-white text-black hover:bg-orange-500 hover:text-white font-black uppercase text-xs tracking-widest py-3.5 px-4 transition-colors duration-150 flex items-center justify-center gap-3 shadow active:scale-95"
+            type="button"
+            className="w-full bg-white text-black hover:bg-orange-500 hover:text-white font-black uppercase text-[10px] tracking-widest py-3 px-4 transition-colors duration-150 flex items-center justify-center gap-3 shadow active:scale-95 rounded-none"
           >
             {/* Google Vector Icon */}
-            <svg className="h-4 w-4 fill-current shrink-0" viewBox="0 0 24 24">
+            <svg className="h-3.5 w-3.5 fill-current shrink-0" viewBox="0 0 24 24">
               <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.7 0 3.3.6 4.5 1.6l2.4-2.4C17.3 1.5 14.9 1 12.24 1 6.137 1 1.24 5.9 1.24 12s4.897 11 11 11c5.93 0 10.518-4.14 10.518-10.5 0-.714-.07-1.41-.2-2.215H12.24z"/>
             </svg>
-            Entrar com o Google
+            Sincronizar com o Google
           </button>
 
-          <p className="text-[9px] text-white/20 font-black tracking-widest uppercase mt-10">TELUMAK RPG SYSTEM</p>
+          <p className="text-[8px] text-white/20 font-black tracking-widest uppercase mt-6 text-center">TELUMAK RPG SYSTEM</p>
         </div>
       </div>
     );
@@ -468,6 +679,17 @@ export default function App() {
 
         </div>
       </nav>
+
+      {/* CAMPAIGN NOTES TAB */}
+      {currentTab === 'anotacoes' && (
+        <div className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 no-print">
+          <CampaignNotes
+            isGM={isGM}
+            currentUser={currentUser}
+            characters={characters}
+          />
+        </div>
+      )}
 
       {/* TACTICAL BATTLE MAP TAB */}
       {currentTab === 'arena' && (
@@ -679,23 +901,13 @@ export default function App() {
                     })}
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    <span className="block text-[9px] text-[#ffffff]/30 font-black uppercase tracking-widest mb-2">Outros Aventureiros</span>
-                    {characters.filter(c => c.email_dono !== currentUser.email).map(c => (
-                      <button
-                        key={c.id}
-                        onClick={() => setSelectedCharId(c.id)}
-                        className={`w-full p-3 border text-left transition duration-150 flex items-center gap-2.5 ${
-                          selectedCharId === c.id ? 'bg-white/10 border-orange-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
-                        }`}
-                      >
-                        <img src={c.img_saudavel} alt={c.nome} className="w-8 h-8 rounded-none object-cover shrink-0 border border-white/10" />
-                        <div className="min-w-0">
-                          <span className="font-extrabold text-xs text-white truncate block uppercase tracking-tight">{c.nome}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  myCharactersList.length === 0 && (
+                    <div className="p-5 border border-dashed border-white/10 text-center text-white/40 italic text-xs leading-relaxed bg-black/30">
+                      Nenhum herói sintonizado a esta conta.<br />
+                      <span className="text-[10px] text-orange-400 font-extrabold uppercase tracking-widest block mt-1.5">Apresente seu E-mail ao Mestre:</span>
+                      <span className="text-[9px] text-white/60 font-mono select-all block bg-[#050505] border border-white/5 py-1.5 px-2 mt-2 tracking-wide font-normal">{currentUser.email}</span>
+                    </div>
+                  )
                 )}
 
                 {characters.length === 0 && (
@@ -749,6 +961,20 @@ export default function App() {
                     <label className="block text-[9px] text-orange-500 font-black uppercase mb-1">PRI</label>
                     <input type="number" value={editPri} onChange={e => setEditPri(Number(e.target.value))} className="w-full text-center bg-[#050505] text-orange-500 border border-orange-500/20 px-1 py-1.5 text-xs font-mono focus:outline-none focus:border-orange-500" />
                   </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[9px] text-[#ffffff]/50 font-black uppercase tracking-widest">E-mail do Jogador Dono (Acesso)</label>
+                  <input 
+                    type="text" 
+                    value={editEmailDono} 
+                    onChange={e => setEditEmailDono(e.target.value)} 
+                    placeholder="email-do-jogador@telumak.com" 
+                    className="w-full bg-[#050505] text-white border border-white/10 px-3 py-1.5 text-xs focus:outline-none focus:border-orange-500 rounded-none placeholder-white/10" 
+                  />
+                  <p className="text-[8px] text-white/30 font-semibold leading-normal">
+                    Associe esta ficha ao e-mail do respectivo jogador para torná-la visível apenas a ele na mesa.
+                  </p>
                 </div>
 
                 <div className="pt-3 border-t border-white/10 flex justify-end gap-2">
@@ -830,6 +1056,11 @@ export default function App() {
                     return null;
                   }
 
+                  // Filter out messages hidden by GM (Backup security)
+                  if (msg.ocultada && !isGM && msg.remetente_email !== currentUser.email) {
+                    return null;
+                  }
+
                   let wrapperClass = "p-3 border text-left ";
                   if (msg.remetente_email === currentUser.email) {
                     wrapperClass += "bg-[#161616] border-white/10 text-white ml-auto border-r-4 border-r-orange-500 max-w-[85%]";
@@ -851,6 +1082,24 @@ export default function App() {
                         <span className="text-[9px] font-mono leading-none tracking-widest uppercase font-extrabold text-orange-500">
                           {msg.remetente}
                         </span>
+                        {isGM && (
+                          <button
+                            onClick={() => handleToggleHideMessage(msg.id, !!msg.ocultada)}
+                            className="hover:text-orange-500 transition-colors focus:outline-none shrink-0"
+                            title={msg.ocultada ? "Tornar Mensagem Visível a Todos" : "Ocultar dos Demais Jogadores"}
+                          >
+                            {msg.ocultada ? (
+                              <EyeOff className="h-3 w-3 text-rose-500 stroke-[2.5]" />
+                            ) : (
+                              <Eye className="h-3 w-3 text-white/30 hover:text-orange-500" />
+                            )}
+                          </button>
+                        )}
+                        {msg.ocultada && (
+                          <span className="text-[7px] text-rose-400 font-black uppercase tracking-widest bg-rose-950/20 border border-rose-500/20 px-1 py-0.5 leading-none">
+                            Ocultada
+                          </span>
+                        )}
                         {isWhisper && (
                           <span className="text-[8px] bg-red-950 text-red-400 border border-red-900/40 px-1.5 font-bold uppercase py-0.2">Sussurro</span>
                         )}

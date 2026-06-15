@@ -54,10 +54,13 @@ service cloud.firestore {
     // --- CHAT MESSAGES ---
     match /messages/{msgId} {
       allow read: if isSignedIn() && (
-        resource.data.destinatario == "TODOS" ||
         isGM() ||
         resource.data.remetente_email == request.auth.token.email ||
-        resource.data.destinatario == request.auth.token.email
+        resource.data.destinatario == request.auth.token.email ||
+        (
+          resource.data.destinatario == "TODOS" &&
+          (!resource.data.keys().hasAny(['ocultada']) || resource.data.ocultada == false)
+        )
       );
       allow create: if isSignedIn() && request.resource.data.remetente_email == request.auth.token.email;
       allow update, delete: if isGM();
@@ -88,6 +91,27 @@ service cloud.firestore {
     match /statuses/{statusId} {
       allow read: if isSignedIn();
       allow write: if isGM();
+    }
+
+    // --- CAMPAIGN NOTES ---
+    match /campaign_notes/{noteId} {
+      allow read: if isSignedIn() && (
+        resource.data.tipo == "PUBLIC" ||
+        isGM() ||
+        resource.data.autor_uid == request.auth.uid
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.autor_uid == request.auth.uid &&
+        (request.resource.data.tipo != "GM_ONLY" || isGM())
+      );
+      allow update: if isSignedIn() && (
+        isGM() || (
+          resource.data.autor_uid == request.auth.uid &&
+          request.resource.data.autor_uid == request.auth.uid &&
+          (request.resource.data.tipo != "GM_ONLY" || isGM())
+        )
+      );
+      allow delete: if isGM() || (isSignedIn() && resource.data.autor_uid == request.auth.uid);
     }
   }
 }

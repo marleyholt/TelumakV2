@@ -81,6 +81,7 @@ export interface ChatMessage {
   tipo: "CHAT" | "ROLL" | "SYSTEM" | "WHISPER";
   conteudo: string; // can contain HTML for rolls
   createdAt: any; // firestore timestamp
+  ocultada?: boolean; // GM can toggle message visibility to hide from other players
 }
 
 export interface CustomStatusType {
@@ -103,4 +104,14 @@ export interface ArenaState {
   bg: string;
   gridWidth: number;
   gridHeight: number;
+}
+
+export interface CampaignNote {
+  id: string;
+  titulo: string;
+  conteudo: string;
+  autor_uid: string;
+  autor_email: string;
+  tipo: "PUBLIC" | "PRIVATE" | "GM_ONLY"; // PUBLIC = todos, PRIVATE = apenas autor e GM, GM_ONLY = apenas mestre
+  createdAt: any;
 }
