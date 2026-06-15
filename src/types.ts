@@ -2,7 +2,7 @@ export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
-  photoURL?: string;
+  photoURL?: string | null;
   role: "GM" | "PLAYER";
 }
 

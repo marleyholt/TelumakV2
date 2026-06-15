@@ -97,12 +97,17 @@ export default function App() {
               uid: user.uid,
               email: user.email || '',
               displayName: user.displayName || 'Gamer',
-              photoURL: user.photoURL || undefined,
+              photoURL: user.photoURL || null,
               role: (user.email === 'leaog.8@gmail.com') ? 'GM' : 'PLAYER'
             };
             await setDoc(userRef, profile);
           } else {
             profile = userSnap.data() as UserProfile;
+            // Corrige se por acaso a conta do mestre principal estiver salva como PLAYER no banco devido a logins anteriores
+            if (user.email === 'leaog.8@gmail.com' && profile.role !== 'GM') {
+              profile.role = 'GM';
+              await setDoc(userRef, { ...profile, role: 'GM' }, { merge: true });
+            }
           }
           setUserProfile(profile);
         } catch (err) {
@@ -152,7 +157,7 @@ export default function App() {
           uid: userCred.user.uid,
           email: userCred.user.email || '',
           displayName: authDisplayName.trim(),
-          photoURL: undefined,
+          photoURL: null,
           role: (isSecretGM || userCred.user.email === 'leaog.8@gmail.com') ? 'GM' : 'PLAYER'
         };
         await setDoc(userRef, profile);
